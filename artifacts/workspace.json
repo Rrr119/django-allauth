@@ -1,0 +1,17 @@
+{
+  "root": "/home/dev/feedback/uid26905",
+  "B": "/home/dev/feedback/uid26905",
+  "sha": "524da7654918afc1795c298e37e3aff3dfe7cbe3",
+  "wslDistro": "Ubuntu-26.04",
+  "source": {
+    "owner": "pennersr",
+    "repo": "django-allauth",
+    "sha": "524da7654918afc1795c298e37e3aff3dfe7cbe3"
+  },
+  "fork": {
+    "owner": "Rrr119",
+    "repo": "django-allauth",
+    "cloneUrl": "https://github.com/Rrr119/django-allauth.git"
+  },
+  "at": "2026-11-19T05:07:30.619Z"
+}

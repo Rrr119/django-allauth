@@ -128,6 +128,11 @@ via the Django admin as well:
                             "reject_deprecated_algorithm": True,
                             # Due to security concerns, IdP initiated SSO is rejected by default.
                             "reject_idp_initiated_sso": True,
+                            # The maximum number of concurrent sessions per
+                            # user, for this tenant. When a new login exceeds
+                            # the limit, the oldest session(s) are ended.
+                            # Requires `allauth.usersessions` to be installed.
+                            "max_concurrent_sessions": None,
                             "signature_algorithm": "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
                             "want_assertion_encrypted": False,
                             "want_assertion_signed": False,
@@ -177,6 +182,31 @@ The SAML provider has the following endpoints:
 - ``/accounts/saml/<organization_slug>/acs/``: Assertion Consumer Service URL.
 
 - ``/accounts/saml/<organization_slug>/sls/``: Single Logout Service URL.
+
+
+Multi-tenancy & session management
+**********************************
+
+Each ``SocialApp`` (addressed by its ``client_id``, i.e. the
+``organization_slug`` in the URLs) is fully isolated:
+
+- The IdP configuration (entity ID, certificates, SSO/SLO URLs) is scoped to
+  the tenant. Incoming SAML responses and logout requests are validated
+  against the IdP entity ID configured for that tenant, even when ``strict``
+  mode is disabled -- a response issued by the IdP of one tenant is never
+  accepted at the endpoint of another tenant.
+
+- Concurrent logins at multiple tenants do not interfere: the temporary
+  state used while the IdP posts back to the ACS endpoint is tracked per
+  tenant.
+
+When the IdP initiates a logout (SLO) by sending a ``LogoutRequest`` to the
+SLS endpoint, all local sessions belonging to that IdP session are ended --
+not just the session of the browser receiving the request. This also covers
+back-channel logout where the IdP server contacts the SLS endpoint directly.
+Likewise, enforcing ``max_concurrent_sessions`` requires tracking sessions
+server side. Both features rely on ``allauth.usersessions`` being installed;
+without it, only the session of the current request is logged out.
 
 - ``/accounts/saml/<organization_slug>/metadata/``: Metadata URL.
 

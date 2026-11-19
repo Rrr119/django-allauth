@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from urllib.parse import urlparse
 
 from django.core.cache import cache
@@ -16,6 +17,7 @@ from allauth.account.adapter import get_adapter as get_account_adapter
 from allauth.socialaccount.adapter import get_adapter
 from allauth.socialaccount.models import SocialApp
 from allauth.socialaccount.providers.saml.provider import SAMLProvider
+from allauth.socialaccount.sessions import LoginSession
 
 
 def get_app_or_404(request: HttpRequest, organization_slug):
@@ -26,6 +28,60 @@ def get_app_or_404(request: HttpRequest, organization_slug):
         )
     except SocialApp.DoesNotExist:
         raise Http404(f"no SocialApp found with client_id={organization_slug}")
+
+
+def get_acs_session(request: HttpRequest, organization_slug) -> LoginSession:
+    """Returns the temporary session used to hand over the ACS POST to the
+    ``FinishACSView``. The session (and its cookie) is namespaced per
+    tenant/organization: when a user initiates logins at multiple tenants
+    concurrently, a shared session would clobber the in-flight requests of the
+    other tenants, potentially mixing up their logins.
+    """
+    suffix = hashlib.sha256(organization_slug.encode("utf8")).hexdigest()[:16]
+    return LoginSession(
+        request, f"saml_acs_session_{suffix}", f"saml-acs-session-{suffix}"
+    )
+
+
+def get_idp_entity_id(auth) -> str | None:
+    return auth.get_settings().get_idp_data().get("entityId")
+
+
+def validate_response_issuer(auth, saml_response: str) -> bool:
+    """Validates that the SAML response was issued by the IdP configured for
+    this tenant. In non-strict mode ``python3-saml`` skips this check, yet it
+    is essential for tenant isolation: a response issued by the IdP of tenant
+    B must never be accepted at the ACS endpoint of tenant A.
+    """
+    from onelogin.saml2.response import OneLogin_Saml2_Response
+
+    entity_id = get_idp_entity_id(auth)
+    if not entity_id:
+        return True
+    try:
+        response = OneLogin_Saml2_Response(auth.get_settings(), saml_response)
+        issuers = response.get_issuers()
+    except Exception:
+        return False
+    return entity_id in issuers
+
+
+def validate_logout_request_issuer(auth, logout_request) -> bool:
+    """Validates that the LogoutRequest originates from the IdP configured
+    for this tenant."""
+    entity_id = get_idp_entity_id(auth)
+    if not entity_id:
+        return True
+    issuer = type(logout_request).get_issuer(logout_request.get_xml())
+    return issuer == entity_id
+
+
+def get_logout_request_nameid(logout_request):
+    return type(logout_request).get_nameid(logout_request.get_xml())
+
+
+def get_logout_request_session_indexes(logout_request) -> list:
+    return type(logout_request).get_session_indexes(logout_request.get_xml())
 
 
 def prepare_django_request(request: HttpRequest) -> dict:
